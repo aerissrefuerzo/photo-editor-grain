@@ -5,7 +5,7 @@ A browser-only photo tool: add film grain and a display-serif headline to any ph
 ## Features
 
 - **Grain:** ISO 100 / 400 / 1600 / 3200 presets, amount, grain size, midtone bias, optional color grain, new-pattern reroll. Grain scales with resolution, so the export matches the preview.
-- **Text:** Fraunces (default) plus DM Serif Display, Young Serif, Gloock, Playfair Display and Abril Fatface. Size, tracking, leading, alignment, position presets, drag to place (snaps to center), color swatches, soft shadow, grain over or under the text.
+- **Text:** add as many text boxes as you need. Click a box on the photo to select it, drag it to move (snaps to center), drag a corner or side handle to resize the text. Delete removes the selected box, Esc deselects, double-click jumps to editing its text. Each box has its own typeface (Fraunces by default, plus DM Serif Display, Young Serif, Gloock, Playfair Display and Abril Fatface), size, tracking, leading, alignment, color and soft shadow. Grain can sit over or under the text.
 - **Input:** open, drag and drop, or paste an image.
 - **Export:** full-resolution JPEG (quality 92) or PNG, via Download or Copy image.
 - **Privacy:** everything runs in the browser. Nothing is uploaded.

@@ -63,10 +63,49 @@ header.bar p { margin: 0; color: var(--muted); }
 #preview {
   max-width: 100%; max-height: calc(100vh - 150px); display: block;
   box-shadow: 0 1px 2px rgba(0,0,0,.15), 0 8px 24px rgba(0,0,0,.18);
-  touch-action: none; cursor: default;
 }
-#preview.can-drag { cursor: grab; }
-#preview.dragging { cursor: grabbing; }
+.stage { position: relative; line-height: 0; max-width: 100%; touch-action: none; }
+.overlay { position: absolute; inset: 0; pointer-events: none; }
+/* Text box frames sit on the photo, so they use fixed white-on-shadow colors that read on any image. */
+.tbox {
+  position: absolute; pointer-events: auto; cursor: move;
+  outline: 1px dashed transparent; outline-offset: 6px;
+}
+.tbox:hover { outline-color: rgba(255,255,255,.85); }
+.tbox.active { outline: 1.5px solid #ffffff; }
+.tbox.active::before { content: ""; position: absolute; inset: -8px; border: 1px solid rgba(0,0,0,.3); pointer-events: none; }
+.tbox .h { display: none; position: absolute; width: 10px; height: 10px; background: #ffffff;
+  border: 1.5px solid var(--accent); border-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.tbox .h::after { content: ""; position: absolute; inset: -8px; }
+.tbox.active .h { display: block; }
+.h[data-h="nw"] { left: -12px; top: -12px; cursor: nwse-resize; }
+.h[data-h="ne"] { right: -12px; top: -12px; cursor: nesw-resize; }
+.h[data-h="sw"] { left: -12px; bottom: -12px; cursor: nesw-resize; }
+.h[data-h="se"] { right: -12px; bottom: -12px; cursor: nwse-resize; }
+.h[data-h="w"] { left: -12px; top: calc(50% - 5px); cursor: ew-resize; }
+.h[data-h="e"] { right: -12px; top: calc(50% - 5px); cursor: ew-resize; }
+.stage.busy, .stage.busy * { cursor: grabbing !important; }
+@media (pointer: coarse) {
+  .tbox .h { width: 16px; height: 16px; }
+  .h[data-h="nw"], .h[data-h="sw"], .h[data-h="w"] { left: -16px; }
+  .h[data-h="ne"], .h[data-h="se"], .h[data-h="e"] { right: -16px; }
+  .h[data-h="nw"], .h[data-h="ne"] { top: -16px; }
+  .h[data-h="sw"], .h[data-h="se"] { bottom: -16px; }
+  .h[data-h="w"], .h[data-h="e"] { top: calc(50% - 8px); }
+}
+.layers { display: flex; flex-wrap: wrap; gap: 6px; }
+.layers button {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 12px var(--font-ui); padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.layers button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.legend-actions { display: inline-flex; gap: 6px; }
+.mini {
+  font: 500 12px var(--font-ui); text-transform: none; letter-spacing: 0; padding: 3px 8px; border-radius: 3px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer;
+}
+.mini.add { border-color: var(--accent); color: var(--accent); }
 .easel .hint {
   position: absolute; left: 16px; bottom: 10px; font: 12px var(--font-mono); color: var(--muted);
 }
@@ -146,12 +185,15 @@ button.btn:hover, label.btn:hover { filter: brightness(1.05); }
 <div class="app">
   <header class="bar">
     <h1>Grain &amp; Type</h1>
-    <p>Drop a photo, add grain, set a headline. Everything stays in your browser.</p>
+    <p>Drop a photo, add grain, set your text. Everything stays in your browser.</p>
   </header>
 
   <main class="easel" id="easel">
-    <canvas id="preview" aria-label="Edited photo preview"></canvas>
-    <span class="hint" id="hint">Sample sky loaded. Drag the text to move it.</span>
+    <div class="stage" id="stage">
+      <canvas id="preview" aria-label="Edited photo preview"></canvas>
+      <div class="overlay" id="overlay"></div>
+    </div>
+    <span class="hint" id="hint">Drag text to move it. Drag a handle to resize.</span>
   </main>
 
   <aside class="controls">
@@ -178,16 +220,23 @@ button.btn:hover, label.btn:hover { filter: brightness(1.05); }
       <div class="row"><label for="size">Size</label><input id="size" type="range" min="1" max="4" step="0.1" value="1.4"><output for="size" id="sizeOut">1.4</output></div>
       <div class="row"><label for="tone">Midtone bias</label><input id="tone" type="range" min="0" max="100" value="60"><output for="tone" id="toneOut">60</output></div>
       <label class="check"><input type="checkbox" id="chroma"> Color grain</label>
+      <label class="check"><input type="checkbox" id="grainOverText" checked> Grain over text</label>
       <button class="btn" id="reroll" type="button">New grain pattern</button>
     </fieldset>
 
     <fieldset id="textSet">
-      <legend>Text <span class="switch"><input type="checkbox" id="textOn" checked><label for="textOn">On</label></span></legend>
-      <textarea id="text" aria-label="Text" spellcheck="false">Wanna talk
-about it?</textarea>
+      <legend>Text
+        <span class="legend-actions">
+          <button type="button" class="mini" id="removeText">Remove</button>
+          <button type="button" class="mini add" id="addText">+ Add text</button>
+        </span>
+      </legend>
+      <div class="layers" id="layers" role="group" aria-label="Text boxes"></div>
+      <p class="note" id="noSel" hidden>Select a text box on the photo, or add one.</p>
+      <textarea id="text" aria-label="Text" spellcheck="false"></textarea>
       <div class="row two"><label for="font">Typeface</label>
         <select id="font">
-          <option value="Fraunces|800" selected>Fraunces Heavy</option>
+          <option value="Fraunces|800">Fraunces Heavy</option>
           <option value="Fraunces|900">Fraunces Black</option>
           <option value="DM Serif Display|400">DM Serif Display</option>
           <option value="Young Serif|400">Young Serif</option>
@@ -196,13 +245,13 @@ about it?</textarea>
           <option value="Abril Fatface|400">Abril Fatface</option>
         </select>
       </div>
-      <div class="row"><label for="fsize">Size</label><input id="fsize" type="range" min="3" max="30" step="0.5" value="13"><output for="fsize" id="fsizeOut">13</output></div>
+      <div class="row"><label for="fsize">Size</label><input id="fsize" type="range" min="1" max="60" step="0.5" value="13"><output for="fsize" id="fsizeOut">13</output></div>
       <div class="row"><label for="track">Tracking</label><input id="track" type="range" min="-80" max="100" value="-30"><output for="track" id="trackOut">-30</output></div>
       <div class="row"><label for="lead">Leading</label><input id="lead" type="range" min="70" max="150" value="92"><output for="lead" id="leadOut">0.92</output></div>
       <div class="row two"><label>Align</label>
         <div class="seg" role="group" aria-label="Alignment">
           <button type="button" data-align="left">Left</button>
-          <button type="button" data-align="center" aria-pressed="true">Center</button>
+          <button type="button" data-align="center">Center</button>
           <button type="button" data-align="right">Right</button>
         </div>
       </div>
@@ -223,7 +272,6 @@ about it?</textarea>
         </div>
       </div>
       <label class="check"><input type="checkbox" id="shadow"> Soft shadow</label>
-      <label class="check"><input type="checkbox" id="grainOverText" checked> Grain over text</label>
     </fieldset>
 
     <fieldset>
@@ -248,7 +296,10 @@ about it?</textarea>
 (() => {
   const $ = (id) => document.getElementById(id);
   const preview = $("preview");
+  const stage = $("stage");
+  const overlay = $("overlay");
   const PREVIEW_MAX = 1400;
+  const SIZE_MIN = 1, SIZE_MAX = 60; // text size, % of photo width
 
   const ISO = {
     100:  { amount: 10, size: 1.0, tone: 50 },
@@ -256,14 +307,22 @@ about it?</textarea>
     1600: { amount: 38, size: 1.9, tone: 65 },
     3200: { amount: 55, size: 2.5, tone: 70 },
   };
-  const DEFAULTS = {
-    grainOn: true, amount: 22, size: 1.4, tone: 60, chroma: false, seed: 7,
-    textOn: true, text: "Wanna talk\nabout it?", font: "Fraunces|800", fsize: 13, track: -30, lead: 92,
-    align: "center", x: 0.5, y: 0.5, color: "#fbf3e4", shadow: false, grainOverText: true,
+  const STYLE = { font: "Fraunces|800", fsize: 13, track: -30, lead: 92, align: "center", color: "#fbf3e4", shadow: false };
+  let uid = 0;
+  const newLayer = (over) => ({ id: ++uid, text: "Your text", x: 0.5, y: 0.5, ...STYLE, ...over });
+  const defaults = () => {
+    const first = newLayer({ text: "Wanna talk\nabout it?" });
+    return {
+      grainOn: true, amount: 22, size: 1.4, tone: 60, chroma: false, seed: 7, grainOverText: true,
+      layers: [first], active: first.id,
+    };
   };
-  let s = { ...DEFAULTS };
+  let s = defaults();
   let source = null; // HTMLCanvasElement or HTMLImageElement
-  let textBox = null; // last drawn text bounds in preview pixels
+  let boxes = {};    // layer id -> text bounds in preview canvas pixels
+
+  const cur = () => s.layers.find((l) => l.id === s.active) || null;
+  const byId = (id) => s.layers.find((l) => l.id === id);
 
   // ---------- sample image: procedural sky ----------
   function sampleSky() {
@@ -306,13 +365,21 @@ about it?</textarea>
   }
   const srcW = () => source.naturalWidth || source.width;
   const srcH = () => source.naturalHeight || source.height;
-  const fontParts = () => { const [family, weight] = s.font.split("|"); return { family, weight }; };
+  const fontOf = (l) => { const [family, weight] = l.font.split("|"); return { family, weight }; };
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const loadFonts = () => Promise.all([...new Set(s.layers.map((l) => l.font))].map((f) => {
+    const { family, weight } = fontOf({ font: f });
+    return document.fonts.load(`${weight} 40px "${family}"`).catch(() => {});
+  }));
 
   // ---------- grain ----------
-  function applyGrain(ctx, w, h) {
-    if (!s.grainOn || s.amount <= 0) return;
-    const shortSide = Math.min(w, h);
-    const cell = Math.max(1, s.size * shortSide / 1200);
+  // The noise field only depends on size, grain settings and seed, so it is cached
+  // while text is dragged or resized.
+  let noiseCache = { key: "", data: null };
+  function noiseField(w, h) {
+    const key = `${w}x${h}|${s.size}|${s.seed}|${s.chroma}`;
+    if (noiseCache.key === key) return noiseCache.data;
+    const cell = Math.max(1, s.size * Math.min(w, h) / 1200);
     const nw = Math.max(1, Math.ceil(w / cell)), nh = Math.max(1, Math.ceil(h / cell));
     const nc = document.createElement("canvas"); nc.width = nw; nc.height = nh;
     const nctx = nc.getContext("2d");
@@ -331,14 +398,19 @@ about it?</textarea>
       nd.data[i + 3] = 255;
     }
     nctx.putImageData(nd, 0, 0);
-
     const big = document.createElement("canvas"); big.width = w; big.height = h;
     const bctx = big.getContext("2d");
     bctx.imageSmoothingEnabled = cell > 1.5;
     bctx.imageSmoothingQuality = "low";
     bctx.drawImage(nc, 0, 0, nw * cell, nh * cell);
-    const noise = bctx.getImageData(0, 0, w, h).data;
+    const data = bctx.getImageData(0, 0, w, h).data;
+    noiseCache = { key, data };
+    return data;
+  }
 
+  function applyGrain(ctx, w, h) {
+    if (!s.grainOn || s.amount <= 0) return;
+    const noise = noiseField(w, h);
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
     const strength = (s.amount / 100) * 1.1;
@@ -355,34 +427,34 @@ about it?</textarea>
   }
 
   // ---------- text ----------
-  function drawText(ctx, w, h) {
-    if (!s.textOn || !s.text.trim()) return null;
-    const { family, weight } = fontParts();
-    const px = (s.fsize / 100) * w;
+  function drawText(ctx, w, h, l) {
+    if (!l.text.trim()) l = { ...l, text: " " };
+    const { family, weight } = fontOf(l);
+    const px = (l.fsize / 100) * w;
     ctx.save();
     ctx.font = `${weight} ${px}px "${family}", Georgia, serif`;
-    if ("letterSpacing" in ctx) ctx.letterSpacing = `${(s.track / 1000) * px}px`;
+    if ("letterSpacing" in ctx) ctx.letterSpacing = `${(l.track / 1000) * px}px`;
     ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = s.color;
-    if (s.shadow) {
+    ctx.fillStyle = l.color;
+    if (l.shadow) {
       ctx.shadowColor = "rgba(0,0,0,0.28)";
       ctx.shadowBlur = px * 0.18;
       ctx.shadowOffsetY = px * 0.03;
     }
-    const lines = s.text.split("\n");
-    const lineH = px * (s.lead / 100);
-    const widths = lines.map((l) => ctx.measureText(l).width);
-    const blockW = Math.max(...widths);
+    const lines = l.text.split("\n");
+    const lineH = px * (l.lead / 100);
+    const widths = lines.map((t) => ctx.measureText(t).width);
+    const blockW = Math.max(px * 0.5, ...widths);
     const m = ctx.measureText("Hg");
     const ascent = m.actualBoundingBoxAscent || px * 0.75;
     const descent = m.actualBoundingBoxDescent || px * 0.2;
     const blockH = ascent + lineH * (lines.length - 1) + descent;
-    const cx = s.x * w, cy = s.y * h;
+    const cx = l.x * w, cy = l.y * h;
     const left = cx - blockW / 2, top = cy - blockH / 2;
     lines.forEach((line, i) => {
       let x = left;
-      if (s.align === "center") x = cx - widths[i] / 2;
-      else if (s.align === "right") x = left + blockW - widths[i];
+      if (l.align === "center") x = cx - widths[i] / 2;
+      else if (l.align === "right") x = left + blockW - widths[i];
       ctx.fillText(line, x, top + ascent + i * lineH);
     });
     ctx.restore();
@@ -393,14 +465,15 @@ about it?</textarea>
   function render(canvas, scale) {
     const w = Math.max(1, Math.round(srcW() * scale));
     const h = Math.max(1, Math.round(srcH() * scale));
-    canvas.width = w; canvas.height = h;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(source, 0, 0, w, h);
-    let box = null;
-    if (s.grainOverText) { box = drawText(ctx, w, h); applyGrain(ctx, w, h); }
-    else { applyGrain(ctx, w, h); box = drawText(ctx, w, h); }
-    return box;
+    const out = {};
+    const text = () => s.layers.forEach((l) => { out[l.id] = drawText(ctx, w, h, l); });
+    if (s.grainOverText) { text(); applyGrain(ctx, w, h); }
+    else { applyGrain(ctx, w, h); text(); }
+    return out;
   }
 
   let queued = false;
@@ -410,76 +483,163 @@ about it?</textarea>
     requestAnimationFrame(async () => {
       queued = false;
       if (!source) return;
-      const { family, weight } = fontParts();
-      try { await document.fonts.load(`${weight} 40px "${family}"`); } catch (e) {}
+      await loadFonts();
       const scale = Math.min(1, PREVIEW_MAX / Math.max(srcW(), srcH()));
-      textBox = render(preview, scale);
-      preview.classList.toggle("can-drag", !!textBox);
+      boxes = render(preview, scale);
+      drawOverlay();
     });
   }
 
-  // ---------- UI binding ----------
-  const sliders = {
-    amount: (v) => v, size: (v) => (+v).toFixed(1), tone: (v) => v,
-    fsize: (v) => v, track: (v) => v, lead: (v) => (v / 100).toFixed(2),
+  // ---------- on-photo text boxes ----------
+  function drawOverlay() {
+    const W = preview.width, H = preview.height;
+    const pct = (v, d) => `${(v / d) * 100}%`;
+    overlay.innerHTML = s.layers.map((l) => {
+      const b = boxes[l.id]; if (!b) return "";
+      const handles = ["nw", "ne", "sw", "se", "w", "e"].map((k) => `<span class="h" data-h="${k}"></span>`).join("");
+      return `<div class="tbox${l.id === s.active ? " active" : ""}" data-id="${l.id}" title="Drag to move. Double-click to edit."
+        style="left:${pct(b.x, W)};top:${pct(b.y, H)};width:${pct(b.w, W)};height:${pct(b.h, H)}">${handles}</div>`;
+    }).join("");
+  }
+
+  const toCanvas = (e) => {
+    const r = preview.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (preview.width / r.width), y: (e.clientY - r.top) * (preview.height / r.height) };
   };
+
+  let drag = null;
+  stage.addEventListener("pointerdown", (e) => {
+    const boxEl = e.target.closest(".tbox");
+    if (!boxEl) { if (s.active !== null) update({ active: null }); return; }
+    const l = byId(+boxEl.dataset.id);
+    if (!l) return;
+    if (s.active !== l.id) { s.active = l.id; syncUI(); drawOverlay(); }
+    const W = preview.width, H = preview.height;
+    const p = toCanvas(e);
+    const b = boxes[l.id];
+    const hEl = e.target.closest("[data-h]");
+    if (hEl && b) {
+      // Resize from the handle, keeping the opposite corner or side fixed.
+      const k = hEl.dataset.h;
+      const ax = k.includes("w") ? b.x + b.w : k.includes("e") ? b.x : b.x + b.w / 2;
+      const ay = k === "w" || k === "e" ? b.y + b.h / 2 : k.includes("n") ? b.y + b.h : b.y;
+      const dist = (q) => (k === "w" || k === "e") ? Math.abs(q.x - ax) : Math.hypot(q.x - ax, q.y - ay);
+      drag = { mode: "resize", id: l.id, ax, ay, dist, d0: Math.max(4, dist(p)), size0: l.fsize, cx0: l.x * W, cy0: l.y * H };
+    } else {
+      drag = { mode: "move", id: l.id, dx: p.x - l.x * W, dy: p.y - l.y * H };
+    }
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add("busy");
+    e.preventDefault();
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const l = byId(drag.id); if (!l) return;
+    const W = preview.width, H = preview.height;
+    const p = toCanvas(e);
+    if (drag.mode === "move") {
+      let x = (p.x - drag.dx) / W, y = (p.y - drag.dy) / H;
+      if (Math.abs(x - 0.5) < 0.012) x = 0.5; // snap to the center lines
+      if (Math.abs(y - 0.5) < 0.012) y = 0.5;
+      Object.assign(l, { x: clamp(x, 0, 1), y: clamp(y, 0, 1) });
+    } else {
+      const size = clamp(drag.size0 * (drag.dist(p) / drag.d0), SIZE_MIN, SIZE_MAX);
+      const r = size / drag.size0;
+      Object.assign(l, {
+        fsize: Math.round(size * 10) / 10,
+        x: clamp((drag.ax + (drag.cx0 - drag.ax) * r) / W, 0, 1),
+        y: clamp((drag.ay + (drag.cy0 - drag.ay) * r) / H, 0, 1),
+      });
+    }
+    syncUI(); schedule();
+  });
+  const endDrag = () => { drag = null; stage.classList.remove("busy"); };
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
+  stage.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".tbox")) { $("text").focus(); $("text").select(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, textarea, select")) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && cur()) { e.preventDefault(); removeActive(); }
+    if (e.key === "Escape" && cur()) update({ active: null });
+  });
+
+  // ---------- adding and removing text ----------
+  function addText() {
+    const base = cur() || s.layers[s.layers.length - 1];
+    const style = base ? { font: base.font, fsize: Math.min(base.fsize, 9), track: base.track, lead: base.lead,
+      align: base.align, color: base.color, shadow: base.shadow } : {};
+    const y = base ? (base.y > 0.6 ? base.y - 0.2 : base.y + 0.2) : 0.5;
+    const l = newLayer({ ...style, x: 0.5, y: clamp(y, 0.1, 0.9) });
+    s.layers.push(l);
+    update({ active: l.id });
+    $("text").focus(); $("text").select();
+  }
+  function removeActive() {
+    const i = s.layers.findIndex((l) => l.id === s.active);
+    if (i < 0) return;
+    s.layers.splice(i, 1);
+    const next = s.layers[Math.min(i, s.layers.length - 1)];
+    update({ active: next ? next.id : null });
+  }
+  $("addText").addEventListener("click", addText);
+  $("removeText").addEventListener("click", removeActive);
+
+  // ---------- UI binding ----------
+  const grainSliders = { amount: (v) => v, size: (v) => (+v).toFixed(1), tone: (v) => v };
+  const textSliders = { fsize: (v) => (+v).toFixed(1).replace(/\.0$/, ""), track: (v) => v, lead: (v) => (v / 100).toFixed(2) };
+  const label = (l) => (l.text.split("\n").find((t) => t.trim()) || "Empty text").trim();
+
   function syncUI() {
-    for (const k of Object.keys(sliders)) { $(k).value = s[k]; $(k + "Out").textContent = sliders[k](s[k]); }
-    $("grainOn").checked = s.grainOn; $("chroma").checked = s.chroma;
-    $("textOn").checked = s.textOn; $("text").value = s.text; $("font").value = s.font;
-    $("color").value = s.color; $("shadow").checked = s.shadow; $("grainOverText").checked = s.grainOverText;
-    document.querySelectorAll("[data-align]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.align === s.align));
+    for (const k of Object.keys(grainSliders)) { $(k).value = s[k]; $(k + "Out").textContent = grainSliders[k](s[k]); }
+    $("grainOn").checked = s.grainOn; $("chroma").checked = s.chroma; $("grainOverText").checked = s.grainOverText;
     document.querySelectorAll("[data-iso]").forEach((b) => {
       const p = ISO[b.dataset.iso];
       b.setAttribute("aria-pressed", p.amount === s.amount && p.size === s.size && p.tone === s.tone);
     });
     $("grainSet").querySelectorAll("input:not(#grainOn), button").forEach((el) => (el.disabled = !s.grainOn));
-    $("textSet").querySelectorAll("textarea, select, input:not(#textOn), button").forEach((el) => (el.disabled = !s.textOn));
-    $("textSet").querySelector("textarea").style.fontFamily = `"${fontParts().family}", Georgia, serif`;
-    $("textSet").querySelector("textarea").style.fontWeight = fontParts().weight;
+
+    const layersEl = $("layers");
+    layersEl.innerHTML = "";
+    s.layers.forEach((l) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label(l); b.title = label(l);
+      b.setAttribute("aria-pressed", l.id === s.active);
+      b.addEventListener("click", () => update({ active: l.id }));
+      layersEl.appendChild(b);
+    });
+    layersEl.hidden = s.layers.length === 0;
+
+    const l = cur();
+    $("noSel").hidden = !!l;
+    $("removeText").disabled = !l;
+    $("textSet").querySelectorAll("textarea, select, input, .seg button, .swatch").forEach((el) => (el.disabled = !l));
+    if (!l) return;
+    for (const k of Object.keys(textSliders)) { $(k).value = l[k]; $(k + "Out").textContent = textSliders[k](l[k]); }
+    if (document.activeElement !== $("text")) $("text").value = l.text;
+    $("font").value = l.font; $("color").value = l.color; $("shadow").checked = l.shadow;
+    document.querySelectorAll("[data-align]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.align === l.align));
+    $("text").style.fontFamily = `"${fontOf(l).family}", Georgia, serif`;
+    $("text").style.fontWeight = fontOf(l).weight;
   }
   const update = (patch) => { Object.assign(s, patch); syncUI(); schedule(); };
+  const updateText = (patch) => { const l = cur(); if (!l) return; Object.assign(l, patch); syncUI(); schedule(); };
 
-  for (const k of Object.keys(sliders)) $(k).addEventListener("input", (e) => update({ [k]: +e.target.value }));
-  ["grainOn", "chroma", "textOn", "shadow", "grainOverText"].forEach((k) =>
-    $(k).addEventListener("change", (e) => update({ [k]: e.target.checked })));
-  $("text").addEventListener("input", (e) => update({ text: e.target.value }));
-  $("font").addEventListener("change", (e) => update({ font: e.target.value }));
-  $("color").addEventListener("input", (e) => update({ color: e.target.value }));
-  document.querySelectorAll("[data-color]").forEach((b) => b.addEventListener("click", () => update({ color: b.dataset.color })));
-  document.querySelectorAll("[data-align]").forEach((b) => b.addEventListener("click", () => update({ align: b.dataset.align })));
-  document.querySelectorAll("[data-place]").forEach((b) => b.addEventListener("click", () => update({ x: 0.5, y: +b.dataset.place })));
+  for (const k of Object.keys(grainSliders)) $(k).addEventListener("input", (e) => update({ [k]: +e.target.value }));
+  for (const k of Object.keys(textSliders)) $(k).addEventListener("input", (e) => updateText({ [k]: +e.target.value }));
+  ["grainOn", "chroma", "grainOverText"].forEach((k) => $(k).addEventListener("change", (e) => update({ [k]: e.target.checked })));
+  $("shadow").addEventListener("change", (e) => updateText({ shadow: e.target.checked }));
+  $("text").addEventListener("input", (e) => updateText({ text: e.target.value }));
+  $("text").addEventListener("blur", syncUI);
+  $("font").addEventListener("change", (e) => updateText({ font: e.target.value }));
+  $("color").addEventListener("input", (e) => updateText({ color: e.target.value }));
+  document.querySelectorAll("[data-color]").forEach((b) => b.addEventListener("click", () => updateText({ color: b.dataset.color })));
+  document.querySelectorAll("[data-align]").forEach((b) => b.addEventListener("click", () => updateText({ align: b.dataset.align })));
+  document.querySelectorAll("[data-place]").forEach((b) => b.addEventListener("click", () => updateText({ x: 0.5, y: +b.dataset.place })));
   document.querySelectorAll("[data-iso]").forEach((b) => b.addEventListener("click", () => update({ ...ISO[b.dataset.iso], grainOn: true })));
   $("reroll").addEventListener("click", () => update({ seed: (Math.random() * 1e9) | 0 }));
-  $("reset").addEventListener("click", () => { s = { ...DEFAULTS }; syncUI(); schedule(); });
-
-  // ---------- drag text ----------
-  let drag = null;
-  const toCanvas = (e) => {
-    const r = preview.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (preview.width / r.width), y: (e.clientY - r.top) * (preview.height / r.height) };
-  };
-  preview.addEventListener("pointerdown", (e) => {
-    if (!textBox) return;
-    const p = toCanvas(e);
-    const pad = preview.width * 0.03;
-    const hit = p.x > textBox.x - pad && p.x < textBox.x + textBox.w + pad && p.y > textBox.y - pad && p.y < textBox.y + textBox.h + pad;
-    if (!hit) return;
-    drag = { dx: p.x - s.x * preview.width, dy: p.y - s.y * preview.height };
-    preview.setPointerCapture(e.pointerId);
-    preview.classList.add("dragging");
-  });
-  preview.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    const p = toCanvas(e);
-    let x = (p.x - drag.dx) / preview.width, y = (p.y - drag.dy) / preview.height;
-    if (Math.abs(x - 0.5) < 0.012) x = 0.5; // snap to vertical center line
-    if (Math.abs(y - 0.5) < 0.012) y = 0.5;
-    update({ x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) });
-  });
-  const endDrag = () => { drag = null; preview.classList.remove("dragging"); };
-  preview.addEventListener("pointerup", endDrag);
-  preview.addEventListener("pointercancel", endDrag);
+  $("reset").addEventListener("click", () => { s = defaults(); syncUI(); schedule(); });
 
   // ---------- loading images ----------
   let fileName = "photo";
@@ -489,7 +649,7 @@ about it?</textarea>
     const img = new Image();
     img.onload = () => {
       source = img; fileName = file.name.replace(/\.[^.]+$/, "") || "photo";
-      $("hint").textContent = `${img.naturalWidth} × ${img.naturalHeight} px. Drag the text to move it.`;
+      $("hint").textContent = `${img.naturalWidth} × ${img.naturalHeight} px. Drag text to move it, drag a handle to resize.`;
       status(""); schedule();
     };
     img.onerror = () => status("Your browser couldn't decode that image. Convert it to JPEG or PNG and try again.");
@@ -512,8 +672,7 @@ about it?</textarea>
   function status(msg) { $("status").textContent = msg; }
   async function fullRes(type) {
     status("Rendering full resolution…");
-    const { family, weight } = fontParts();
-    try { await document.fonts.load(`${weight} 40px "${family}"`); } catch (e) {}
+    await loadFonts();
     const c = document.createElement("canvas");
     render(c, 1);
     return new Promise((res) => c.toBlob(res, type, 0.92));
