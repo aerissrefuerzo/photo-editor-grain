@@ -7,7 +7,7 @@
 <meta name="description" content="Add film grain and display-serif text to a photo, all in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..900&family=DM+Serif+Display&family=Young+Serif&family=Playfair+Display:wght@400..900&family=Gloock&family=Abril+Fatface&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,100..900&family=DM+Serif+Display&family=Young+Serif&family=Playfair+Display:wght@400..900&family=Gloock&family=Abril+Fatface&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: darkroom bench — photo on the easel (left), one narrow control strip (right); stacks on phones. */
 :root {
@@ -236,6 +236,9 @@ button.btn:hover, label.btn:hover { filter: brightness(1.05); }
       <textarea id="text" aria-label="Text" spellcheck="false"></textarea>
       <div class="row two"><label for="font">Typeface</label>
         <select id="font">
+          <option value="Fraunces|100">Fraunces Thin</option>
+          <option value="Fraunces|300">Fraunces Light</option>
+          <option value="Fraunces|400">Fraunces Regular</option>
           <option value="Fraunces|800">Fraunces Heavy</option>
           <option value="Fraunces|900">Fraunces Black</option>
           <option value="DM Serif Display|400">DM Serif Display</option>
